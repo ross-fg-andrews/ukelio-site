@@ -21,7 +21,8 @@ export default {
         },
       },
       fontFamily: {
-        mono: ['Inconsolata', 'monospace'],
+        sans: ['IBM Plex Sans', 'sans-serif'],
+        mono: ['IBM Plex Mono', 'monospace'],
       },
     },
   },

@@ -448,7 +448,7 @@ export default function SongSheet() {
             onChange={(e) => setLyricsText(e.target.value)}
             placeholder={isCreateMode ? "Paste your lyrics here.\n\nPress / to add chords inline with your lyrics.\n\nExample:\nAmazing [C]grace how [G]sweet the [Am]sound\nThat saved a [F]wretch like [C]me" : ""}
             rows={30}
-            className="w-full p-0 border-none outline-none focus:outline-none bg-transparent text-lg leading-relaxed resize-none placeholder:text-gray-400"
+            className="w-full p-0 border-none outline-none focus:outline-none bg-transparent text-base leading-relaxed resize-none placeholder:text-gray-400"
             instrument={instrument}
             tuning={tuning}
           />
@@ -769,9 +769,9 @@ export default function SongSheet() {
         {/* Lyrics Section */}
         <div className="flex-1 order-2 md:order-1">
           {chordMode === 'inline' ? (
-            <div className="space-y-2">
+            <div className="space-y-2 font-mono">
               {renderedLyrics.map((line, i) => (
-                <p key={i} className="text-lg leading-relaxed">
+                <p key={i} className="text-base leading-relaxed">
                   {line === '' ? '\u00A0' : line.split(/\[([^\]]+)\]/).map((part, j) => {
                     if (j % 2 === 1) {
                       return <span key={j} className="inline-block px-2 py-1 bg-primary-100 text-primary-700 rounded text-sm font-medium">{part}</span>;
@@ -803,7 +803,7 @@ export default function SongSheet() {
                       })}
                     </p>
                   )}
-                  <p className="text-lg whitespace-pre">{lyricLine === '' ? '\u00A0' : lyricLine}</p>
+                  <p className="text-base whitespace-pre">{lyricLine === '' ? '\u00A0' : lyricLine}</p>
                 </div>
               ))}
             </div>
