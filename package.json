@@ -7,14 +7,20 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
+    "sync-schema": "npx instant-cli@latest push schema --app $(grep VITE_INSTANTDB_APP_ID .env | cut -d '=' -f2) -y",
+    "sync-perms": "npx instant-cli@latest push perms --app $(grep VITE_INSTANTDB_APP_ID .env | cut -d '=' -f2) -y",
+    "sync-all": "npx instant-cli@latest push all --app $(grep VITE_INSTANTDB_APP_ID .env | cut -d '=' -f2) -y",
+    "watch-sync": "node scripts/watch-sync.js",
+    "clear-groups": "npx tsx scripts/clear-groups.ts"
   },
   "dependencies": {
+    "@instantdb/admin": "^0.22.96",
     "@instantdb/react": "^0.22.96",
+    "jspdf": "^2.5.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^6.20.0",
-    "jspdf": "^2.5.1"
+    "react-router-dom": "^6.20.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",
@@ -30,4 +36,3 @@
     "vite": "^5.0.8"
   }
 }
-

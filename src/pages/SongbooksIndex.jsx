@@ -223,20 +223,15 @@ export default function SongbooksIndex() {
                   const isDuplicating = duplicatingId === songbook.id;
                   
                   return (
-                    <tr key={songbook.id} className="hover:bg-gray-50 transition-colors">
+                    <tr 
+                      key={songbook.id} 
+                      onClick={() => navigate(`/songbooks/${songbook.id}`)}
+                      className="hover:bg-gray-50 transition-colors cursor-pointer"
+                    >
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <Link
-                          to={`/songbooks/${songbook.id}`}
-                          className="text-sm font-medium text-gray-900 hover:text-primary-600"
-                          onClick={(e) => {
-                            // Don't navigate if clicking from within the actions cell
-                            if (e.target.closest('td:last-child')) {
-                              e.preventDefault();
-                            }
-                          }}
-                        >
+                        <span className="text-sm font-medium text-gray-900">
                           {songbook.title}
-                        </Link>
+                        </span>
                       </td>
                       <td className="px-6 py-4">
                         <p className="text-sm text-gray-600 max-w-md truncate">

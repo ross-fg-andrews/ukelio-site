@@ -4,7 +4,10 @@
  * Output: { lyrics: string, chords: array }
  */
 export function parseLyricsWithChords(text) {
-  const lines = text.split('\n');
+  // Normalize line breaks: convert \r\n (Windows) and \r (old Mac) to \n
+  // This ensures consistent handling across platforms
+  const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalizedText.split('\n');
   const chords = [];
   let chordId = 0;
 

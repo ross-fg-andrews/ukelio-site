@@ -1,6 +1,7 @@
-import { useParams, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { getChordNames, searchChordNames } from '../utils/chord-library';
 import {
   useGroup,
   useGroupSongs,
@@ -26,6 +27,134 @@ import {
 } from '../db/mutations';
 import { db } from '../db/schema';
 import { id } from '@instantdb/react';
+
+// Helper function to extract unique chords from song chords data
+function getUniqueChords(song) {
+  try {
+    if (!song.chords) return [];
+    const chordsArray = JSON.parse(song.chords);
+    const uniqueChords = [...new Set(chordsArray.map(c => c.chord))];
+    return uniqueChords;
+  } catch {
+    return [];
+  }
+}
+
+// Component to render chords as labels
+function ChordLabels({ chords }) {
+  if (chords.length === 0) {
+    return <span className="text-gray-400">No chords</span>;
+  }
+
+  const displayChords = chords.slice(0, 3);
+  const remainingCount = chords.length - 3;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {displayChords.map((chord, index) => (
+        <span
+          key={index}
+          className="inline-block px-2 py-1 bg-primary-100 text-primary-700 rounded text-sm font-medium"
+        >
+          {chord}
+        </span>
+      ))}
+      {remainingCount > 0 && (
+        <span className="text-gray-500 text-sm">
+          and {remainingCount} more
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Compact chord filter component
+function ChordFilter({ selectedChords, onChordsChange }) {
+  const [chordQuery, setChordQuery] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const allChords = useMemo(() => getChordNames(), []);
+  const filteredChords = useMemo(() => {
+    if (!chordQuery) return allChords.slice(0, 15);
+    return searchChordNames(chordQuery, 'ukulele', 'ukulele_standard', 15);
+  }, [chordQuery, allChords]);
+
+  const handleAddChord = (chord) => {
+    if (!selectedChords.includes(chord)) {
+      onChordsChange([...selectedChords, chord]);
+    }
+    setChordQuery('');
+    setShowDropdown(false);
+  };
+
+  const handleRemoveChord = (chord) => {
+    onChordsChange(selectedChords.filter(c => c !== chord));
+  };
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      {selectedChords.length > 0 && (
+        <>
+          {selectedChords.map((chord) => (
+            <span
+              key={chord}
+              className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-600 text-white rounded text-xs font-medium"
+            >
+              {chord}
+              <button
+                type="button"
+                onClick={() => handleRemoveChord(chord)}
+                className="hover:text-primary-200 focus:outline-none text-sm leading-none"
+                aria-label={`Remove ${chord}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          <button
+            type="button"
+            onClick={() => onChordsChange([])}
+            className="text-xs text-gray-500 hover:text-gray-700 underline"
+          >
+            Clear
+          </button>
+        </>
+      )}
+      <div className="relative flex-1 min-w-[200px]">
+        <input
+          type="text"
+          value={chordQuery}
+          onChange={(e) => {
+            setChordQuery(e.target.value);
+            setShowDropdown(true);
+          }}
+          onFocus={() => setShowDropdown(true)}
+          onBlur={() => {
+            // Delay to allow click on dropdown item
+            setTimeout(() => setShowDropdown(false), 200);
+          }}
+          placeholder={selectedChords.length === 0 ? "Filter by chords..." : "Add chord..."}
+          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+        />
+        {showDropdown && filteredChords.length > 0 && (
+          <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
+            {filteredChords
+              .filter(chord => !selectedChords.includes(chord))
+              .map((chord) => (
+                <button
+                  key={chord}
+                  type="button"
+                  onClick={() => handleAddChord(chord)}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100 transition-colors"
+                >
+                  {chord}
+                </button>
+              ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // Helper function to format user display name from profile data
 // Uses firstName and lastName from user profile, falls back to email, then to "User {userId}"
@@ -56,8 +185,20 @@ function formatUserName(user, fallbackUserId, fallbackEmail = null) {
 export default function GroupPage() {
   const { id: groupId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('overview');
+  
+  // Get initial tab from URL query parameter, default to 'overview'
+  const tabFromUrl = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(tabFromUrl || 'overview');
+  
+  // Update tab when URL parameter changes
+  useEffect(() => {
+    const tabFromUrl = searchParams.get('tab');
+    if (tabFromUrl && tabFromUrl !== activeTab) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [searchParams, activeTab]);
   const [sharingSongId, setSharingSongId] = useState(null);
   const [removingShareId, setRemovingShareId] = useState(null);
   const [error, setError] = useState(null);
@@ -75,6 +216,12 @@ export default function GroupPage() {
   const [savingGroup, setSavingGroup] = useState(false);
   const [removingMemberId, setRemovingMemberId] = useState(null);
   const [selectedSongsForSongbook, setSelectedSongsForSongbook] = useState(new Set());
+  
+  // Search, sort, and filter state for songs tab
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedChords, setSelectedChords] = useState([]);
+  const [sortField, setSortField] = useState('title'); // 'title', 'artist', 'createdAt'
+  const [sortDirection, setSortDirection] = useState('asc'); // 'asc', 'desc'
 
   // Queries
   const { data: groupData } = useGroup(groupId);
@@ -88,8 +235,112 @@ export default function GroupPage() {
   const { data: accessibleSongsData } = useAccessibleSongs(user?.id);
   const { data: mySongsData } = useMySongs(user?.id);
 
-  const songs = songsData?.songShares?.map(ss => ss.song).filter(Boolean) || [];
+  // Get song IDs from songShares for fallback query
   const songShares = songsData?.songShares || [];
+  const songIds = songShares.map(ss => ss.songId).filter(Boolean);
+  
+  // Fallback query: get songs directly if relation isn't populated
+  const { data: directSongsData } = db.useQuery({
+    songs: {
+      $: {
+        where: songIds.length > 0 ? { id: { $in: songIds } } : { id: '' },
+      },
+    },
+  });
+
+  // Get songs from songShares, ensuring uniqueness and valid IDs
+  // Use a Map to ensure uniqueness by song ID (in case of duplicates)
+  const songsMap = new Map();
+  
+  // First, try to get songs from the relation
+  songShares.forEach(ss => {
+    if (ss.song && ss.song.id) {
+      songsMap.set(ss.song.id, ss.song);
+    }
+  });
+  
+  // Also add songs from direct query (in case relation isn't populated)
+  if (directSongsData?.songs) {
+    directSongsData.songs.forEach(song => {
+      if (song && song.id) {
+        // Only add if not already in map (relation takes precedence)
+        if (!songsMap.has(song.id)) {
+          songsMap.set(song.id, song);
+        }
+      }
+    });
+  }
+  
+  const allSongs = Array.from(songsMap.values());
+  
+  // Filter and sort songs
+  const filteredAndSortedSongs = useMemo(() => {
+    let filtered = [...allSongs];
+
+    // Filter by search query (title or artist)
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(song => {
+        const title = (song.title || '').toLowerCase();
+        const artist = (song.artist || '').toLowerCase();
+        return title.includes(query) || artist.includes(query);
+      });
+    }
+
+    // Filter by chords - only show songs that use ONLY the selected chords
+    if (selectedChords.length > 0) {
+      filtered = filtered.filter(song => {
+        const songChords = getUniqueChords(song);
+        const selectedChordsSet = new Set(selectedChords);
+        
+        // Song must use only the selected chords (no other chords)
+        // This means: every chord in the song must be in selectedChords
+        // AND the song must have at least one chord
+        if (songChords.length === 0) return false;
+        
+        // Check if all song chords are in the selected chords
+        return songChords.every(chord => selectedChordsSet.has(chord));
+      });
+    }
+
+    // Sort songs
+    filtered.sort((a, b) => {
+      let aValue, bValue;
+      
+      switch (sortField) {
+        case 'title':
+          aValue = (a.title || '').toLowerCase();
+          bValue = (b.title || '').toLowerCase();
+          break;
+        case 'artist':
+          aValue = (a.artist || '').toLowerCase();
+          bValue = (b.artist || '').toLowerCase();
+          break;
+        case 'createdAt':
+          aValue = a.createdAt || 0;
+          bValue = b.createdAt || 0;
+          break;
+        default:
+          aValue = (a.title || '').toLowerCase();
+          bValue = (b.title || '').toLowerCase();
+      }
+      
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return filtered;
+  }, [allSongs, searchQuery, selectedChords, sortField, sortDirection]);
+  
+  // Debug logging (only when there's an issue)
+  if (allSongs.length === 0 && songShares.length > 0) {
+    console.log('GroupPage - songsData:', songsData);
+    console.log('GroupPage - songShares:', songShares);
+    console.log('GroupPage - songShares with songs:', songShares.map(ss => ({ songId: ss.songId, hasSong: !!ss.song, song: ss.song })));
+    console.log('GroupPage - directSongsData:', directSongsData);
+    console.log('GroupPage - final songs:', allSongs);
+  }
   const meetings = meetingsData?.meetings || [];
   const members = membersData?.groupMembers?.filter(m => m.status === 'approved') || [];
   const pendingMembers = pendingData?.groupMembers || [];
@@ -110,7 +361,7 @@ export default function GroupPage() {
   const myPrivateSongs = (mySongsData?.songs || []).filter(
     song => !groupSongIds.has(song.id)
   );
-  const groupSongs = songs;
+  const groupSongs = allSongs;
 
   const tabs = [
     { id: 'overview', label: 'Overview' },
@@ -193,7 +444,17 @@ export default function GroupPage() {
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                setActiveTab(tab.id);
+                // Update URL to reflect current tab
+                const newSearchParams = new URLSearchParams(searchParams);
+                if (tab.id === 'overview') {
+                  newSearchParams.delete('tab');
+                } else {
+                  newSearchParams.set('tab', tab.id);
+                }
+                setSearchParams(newSearchParams, { replace: true });
+              }}
               className={`pb-2 px-4 border-b-2 transition-colors ${
                 activeTab === tab.id
                   ? 'border-primary-600 text-primary-600 font-semibold'
@@ -303,7 +564,44 @@ export default function GroupPage() {
             )}
           </div>
 
-          {songs.length === 0 ? (
+          {/* Search field - above table */}
+          {allSongs.length > 0 && (
+            <div className="flex items-center gap-4">
+              <div className="flex-1">
+                <input
+                  id="search-songs"
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by title or artist..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                />
+              </div>
+              {(searchQuery || selectedChords.length > 0) && (
+                <div className="text-sm text-gray-600 whitespace-nowrap">
+                  {filteredAndSortedSongs.length} of {allSongs.length} songs
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Compact chord filter - above table */}
+          {allSongs.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600 whitespace-nowrap">Filter by chords:</span>
+              <ChordFilter
+                selectedChords={selectedChords}
+                onChordsChange={setSelectedChords}
+              />
+              {selectedChords.length > 0 && (
+                <span className="text-xs text-gray-500">
+                  (only songs using exactly these chords)
+                </span>
+              )}
+            </div>
+          )}
+
+          {allSongs.length === 0 ? (
             <div className="card text-center py-8 text-gray-500">
               <p>No songs shared with this group yet.</p>
               {isMember && (
@@ -315,40 +613,118 @@ export default function GroupPage() {
                 </button>
               )}
             </div>
+          ) : filteredAndSortedSongs.length === 0 ? (
+            <div className="card text-center py-12 text-gray-500">
+              <p className="text-lg mb-2">No songs match your filters.</p>
+              {(searchQuery || selectedChords.length > 0) && (
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSelectedChords([]);
+                  }}
+                  className="text-primary-600 hover:underline"
+                >
+                  Clear all filters
+                </button>
+              )}
+            </div>
           ) : (
-            <div className="space-y-2">
-              {songs.map((song) => {
-                const share = songShares.find(ss => ss.song?.id === song.id);
-                return (
-                  <div key={song.id} className="card flex items-center justify-between">
-                    <div className="flex-1">
-                      <a
-                        href={`/songs/${song.id}`}
-                        className="text-lg font-semibold hover:text-primary-600"
-                      >
-                        {song.title}
-                      </a>
-                      {song.artist && (
-                        <p className="text-gray-600 text-sm">{song.artist}</p>
-                      )}
-                      {share && (
-                        <p className="text-xs text-gray-500 mt-1">
-                          Shared by User {share.sharedBy}
-                        </p>
-                      )}
-                    </div>
-                    {isAdmin && share && (
+            <div className="card overflow-hidden p-0">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       <button
-                        onClick={() => handleRemoveSong(share.id)}
-                        disabled={removingShareId === share.id}
-                        className="btn btn-secondary text-sm ml-4 disabled:opacity-50"
+                        onClick={() => {
+                          if (sortField === 'title') {
+                            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+                          } else {
+                            setSortField('title');
+                            setSortDirection('asc');
+                          }
+                        }}
+                        className="flex items-center gap-1 hover:text-gray-700"
                       >
-                        {removingShareId === share.id ? 'Removing...' : 'Remove'}
+                        Title
+                        {sortField === 'title' && (
+                          <span>{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                        )}
                       </button>
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <button
+                        onClick={() => {
+                          if (sortField === 'artist') {
+                            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+                          } else {
+                            setSortField('artist');
+                            setSortDirection('asc');
+                          }
+                        }}
+                        className="flex items-center gap-1 hover:text-gray-700"
+                      >
+                        Artist
+                        {sortField === 'artist' && (
+                          <span>{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </button>
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Chords
+                    </th>
+                    {isAdmin && (
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
                     )}
-                  </div>
-                );
-              })}
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredAndSortedSongs.map((song) => {
+                    const uniqueChords = getUniqueChords(song);
+                    const share = songShares.find(ss => ss.song?.id === song.id);
+                    return (
+                      <tr
+                        key={song.id}
+                        onClick={(e) => {
+                          // Don't navigate if clicking the remove button
+                          if (e.target.closest('button')) return;
+                          navigate(`/songs/${song.id}?group=${groupId}`);
+                        }}
+                        className="hover:bg-gray-50 transition-colors cursor-pointer"
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-gray-900 font-medium">
+                            {song.title}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-gray-600">
+                          {song.artist || <span className="text-gray-400">—</span>}
+                        </td>
+                        <td className="px-6 py-4">
+                          <ChordLabels chords={uniqueChords} />
+                        </td>
+                        {isAdmin && (
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {share && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveSong(share.id);
+                                }}
+                                disabled={removingShareId === share.id}
+                                className="btn btn-secondary text-sm disabled:opacity-50"
+                              >
+                                {removingShareId === share.id ? 'Removing...' : 'Remove'}
+                              </button>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
 

@@ -110,3 +110,4 @@ export function searchChordNames(query, instrument = 'ukulele', tuning = 'ukulel
     .slice(0, limit);
 }
 
+

@@ -3,22 +3,83 @@
 import type { InstantRules } from "@instantdb/react";
 
 const rules = {
-  /**
-   * Welcome to Instant's permission system!
-   * Right now your rules are empty. To start filling them in, check out the docs:
-   * https://www.instantdb.com/docs/permissions
-   *
-   * Here's an example to give you a feel:
-   * posts: {
-   *   allow: {
-   *     view: "true",
-   *     create: "isOwner",
-   *     update: "isOwner",
-   *     delete: "isOwner",
-   *   },
-   *   bind: ["isOwner", "auth.id != null && auth.id == data.ownerId"],
-   * },
-   */
+  meetings: {
+    allow: {
+      view: "auth.id != null",
+      create: "auth.id == data.group.createdBy",
+      delete: "auth.id == data.group.createdBy",
+      update: "auth.id == data.group.createdBy",
+    },
+  },
+  songbookSongs: {
+    allow: {
+      view: "auth.id != null",
+      create: "auth.id != null",
+      delete: "auth.id != null",
+      update: "auth.id != null",
+    },
+  },
+  songbooks: {
+    allow: {
+      view: "auth.id != null && (auth.id == data.createdBy || data.type == 'group')",
+      create: "auth.id != null",
+      delete: "auth.id == data.createdBy",
+      update: "auth.id == data.createdBy",
+    },
+  },
+  meetingRSVPs: {
+    allow: {
+      view: "auth.id != null",
+      create: "auth.id != null",
+      delete: "auth.id == data.userId",
+      update: "auth.id == data.userId",
+    },
+  },
+  songs: {
+    allow: {
+      view: "auth.id != null",
+      create: "auth.id != null",
+      delete: "auth.id == data.createdBy",
+      update: "auth.id == data.createdBy",
+    },
+  },
+  chords: {
+    allow: {
+      view: "auth.id != null",
+      create: "false",
+      delete: "false",
+      update: "false",
+    },
+  },
+  groupMembers: {
+    allow: {
+      view: "auth.id != null && (auth.id == data.userId || auth.id == data.group.createdBy)",
+      create: "auth.id != null",
+      delete: "auth.id == data.group.createdBy || auth.id == data.userId",
+      update: "auth.id == data.group.createdBy",
+    },
+  },
+  songShares: {
+    allow: {
+      view: "auth.id != null",
+      create: "auth.id != null",
+      delete: "auth.id == data.sharedBy || auth.id == data.group.createdBy",
+    },
+  },
+  groups: {
+    allow: {
+      view: "auth.id != null",
+      create: "auth.id != null",
+      delete: "auth.id == data.createdBy",
+      update: "auth.id == data.createdBy",
+    },
+  },
+  $users: {
+    allow: {
+      view: "auth.id != null",
+      update: "auth.id == data.id",
+    },
+  },
 } satisfies InstantRules;
 
 export default rules;

@@ -4,7 +4,6 @@ import { i } from "@instantdb/react";
 
 const _schema = i.schema({
   entities: {
-    // InstantDB required entities
     $files: i.entity({
       path: i.string().unique().indexed(),
       url: i.string(),
@@ -13,101 +12,98 @@ const _schema = i.schema({
       email: i.string().unique().indexed().optional(),
       imageURL: i.string().optional(),
       type: i.string().optional(),
+      firstName: i.string().optional(),
+      lastName: i.string().optional(),
     }),
-    
-    // Ukelio entities
-    // Note: We use $users (InstantDB's built-in user entity) for authentication
-    // This users entity is kept for backward compatibility but links have been removed
-    users: i.entity({
-      email: i.string().optional(),
-      name: i.string().optional(),
-      createdAt: i.number({ default: () => Date.now() }),
+    chords: i.entity({
+      frets: i.string(),
+      instrument: i.string(),
+      name: i.string().indexed(),
+      tuning: i.string(),
+      variation: i.string(),
     }),
-
-    groups: i.entity({
-      name: i.string(),
-      description: i.string({ optional: true }),
-      createdBy: i.string(),
-      createdAt: i.number({ default: () => Date.now() }),
-    }),
-
     groupMembers: i.entity({
       groupId: i.string(),
+      joinedAt: i.number(),
+      role: i.string(),
+      status: i.string(),
       userId: i.string(),
-      role: i.string({ default: 'member' }),
-      status: i.string({ default: 'pending' }),
-      joinedAt: i.number({ default: () => Date.now() }),
     }),
-
-    songs: i.entity({
-      title: i.string(),
-      artist: i.string({ optional: true }),
-      lyrics: i.string(),
-      chords: i.string({ optional: true }), // JSON string: array of {lineIndex, position, chord}
-      createdBy: i.string().indexed(),
-      createdAt: i.number({ default: () => Date.now() }).indexed(),
-      updatedAt: i.number({ default: () => Date.now() }),
-    }),
-
-    songShares: i.entity({
-      songId: i.string(),
-      groupId: i.string(),
-      sharedBy: i.string(),
-      sharedAt: i.number({ default: () => Date.now() }),
-    }),
-
-    songbooks: i.entity({
-      title: i.string(),
-      description: i.string({ optional: true }),
-      type: i.string({ default: 'private' }),
-      groupId: i.string({ optional: true }),
+    groups: i.entity({
+      createdAt: i.number(),
       createdBy: i.string(),
-      createdAt: i.number({ default: () => Date.now() }),
-      updatedAt: i.number({ default: () => Date.now() }),
+      description: i.string().optional(),
+      name: i.string(),
     }),
-
-    songbookSongs: i.entity({
-      songbookId: i.string(),
-      songId: i.string(),
-      order: i.number(),
-      addedAt: i.number({ default: () => Date.now() }),
-    }),
-
-    meetings: i.entity({
-      groupId: i.string(),
-      title: i.string(),
-      description: i.string({ optional: true }),
-      date: i.number(),
-      time: i.string(),
-      location: i.string({ optional: true }),
-      createdBy: i.string(),
-      songbookId: i.string({ optional: true }),
-      createdAt: i.number({ default: () => Date.now() }),
-    }),
-
-    meetingSongs: i.entity({
-      meetingId: i.string(),
-      songId: i.string(),
-      order: i.number(),
-    }),
-
     meetingRSVPs: i.entity({
       meetingId: i.string(),
+      respondedAt: i.number(),
+      response: i.string(),
       userId: i.string(),
-      response: i.string({ default: 'maybe' }),
-      respondedAt: i.number({ default: () => Date.now() }),
     }),
-
-    chords: i.entity({
-      name: i.string().indexed(),
-      frets: i.string(),
-      instrument: i.string({ default: 'ukulele' }),
-      tuning: i.string({ default: 'ukulele_standard' }),
-      variation: i.string({ default: 'standard' }),
+    meetings: i.entity({
+      createdAt: i.number(),
+      createdBy: i.string(),
+      date: i.number(),
+      description: i.string(),
+      groupId: i.string(),
+      location: i.string(),
+      songbookId: i.string(),
+      time: i.string(),
+      title: i.string(),
+    }),
+    meetingSongs: i.entity({
+      meetingId: i.string(),
+      order: i.number(),
+      songId: i.string(),
+    }),
+    notifications: i.entity({
+      userId: i.string(),
+      type: i.string(),
+      message: i.string(),
+      read: i.boolean(),
+      createdAt: i.number(),
+      songbookId: i.string().optional(),
+      count: i.number().optional(),
+    }),
+    songbooks: i.entity({
+      createdAt: i.number(),
+      createdBy: i.string(),
+      description: i.string().optional(),
+      groupId: i.string(),
+      title: i.string(),
+      type: i.string(),
+      updatedAt: i.number(),
+    }),
+    songbookSongs: i.entity({
+      addedAt: i.number(),
+      order: i.number().indexed(),
+      songbookId: i.string(),
+      songId: i.string(),
+    }),
+    songs: i.entity({
+      artist: i.string(),
+      chords: i.string(),
+      createdAt: i.number().indexed(),
+      createdBy: i.string().indexed(),
+      lyrics: i.string(),
+      parentSongId: i.string().optional(),
+      title: i.string(),
+      updatedAt: i.number(),
+    }),
+    songShares: i.entity({
+      groupId: i.string(),
+      sharedAt: i.number(),
+      sharedBy: i.string(),
+      songId: i.string(),
+    }),
+    users: i.entity({
+      createdAt: i.number(),
+      email: i.string().optional(),
+      name: i.string().optional(),
     }),
   },
   links: {
-    // InstantDB required links
     $usersLinkedPrimaryUser: {
       forward: {
         on: "$users",
@@ -121,144 +117,150 @@ const _schema = i.schema({
         label: "linkedGuestUsers",
       },
     },
-    
-    // Ukelio links
-    groupMembersToGroups: {
+    groupMembersGroup: {
       forward: {
-        on: 'groupMembers',
-        has: 'many',
-        label: 'group',
+        on: "groupMembers",
+        has: "many",
+        label: "group",
       },
       reverse: {
-        on: 'groups',
-        has: 'many',
-        label: 'members',
+        on: "groups",
+        has: "many",
+        label: "members",
       },
     },
-    // Removed groupMembersToUsers and songsToUsers links - using $users instead
-    songSharesToSongs: {
+    groupMembersUser: {
       forward: {
-        on: 'songShares',
-        has: 'many',
-        label: 'song',
+        on: "groupMembers",
+        has: "many",
+        label: "user",
       },
       reverse: {
-        on: 'songs',
-        has: 'many',
-        label: 'shares',
+        on: "$users",
+        has: "many",
+        label: "groupMemberships",
       },
     },
-    songSharesToGroups: {
+    meetingRSVPsMeeting: {
       forward: {
-        on: 'songShares',
-        has: 'many',
-        label: 'group',
+        on: "meetingRSVPs",
+        has: "many",
+        label: "meeting",
       },
       reverse: {
-        on: 'groups',
-        has: 'many',
-        label: 'songShares',
+        on: "meetings",
+        has: "many",
+        label: "rsvps",
       },
     },
-    // Removed songbooksToUsers link - using $users instead
-    songbooksToGroups: {
+    meetingsGroup: {
       forward: {
-        on: 'songbooks',
-        has: 'many',
-        label: 'group',
+        on: "meetings",
+        has: "many",
+        label: "group",
       },
       reverse: {
-        on: 'groups',
-        has: 'many',
-        label: 'songbooks',
+        on: "groups",
+        has: "many",
+        label: "meetings",
       },
     },
-    songbookSongsToSongbooks: {
+    meetingsSongbook: {
       forward: {
-        on: 'songbookSongs',
-        has: 'many',
-        label: 'songbook',
+        on: "meetings",
+        has: "many",
+        label: "songbook",
       },
       reverse: {
-        on: 'songbooks',
-        has: 'many',
-        label: 'songbookSongs',
+        on: "songbooks",
+        has: "many",
+        label: "meetings",
       },
     },
-    songbookSongsToSongs: {
+    meetingSongsMeeting: {
       forward: {
-        on: 'songbookSongs',
-        has: 'many',
-        label: 'song',
+        on: "meetingSongs",
+        has: "many",
+        label: "meeting",
       },
       reverse: {
-        on: 'songs',
-        has: 'many',
-        label: 'songbookEntries',
+        on: "meetings",
+        has: "many",
+        label: "songs",
       },
     },
-    meetingsToGroups: {
+    meetingSongsSong: {
       forward: {
-        on: 'meetings',
-        has: 'many',
-        label: 'group',
+        on: "meetingSongs",
+        has: "many",
+        label: "song",
       },
       reverse: {
-        on: 'groups',
-        has: 'many',
-        label: 'meetings',
+        on: "songs",
+        has: "many",
+        label: "meetingEntries",
       },
     },
-    // Removed meetingsToUsers link - using $users instead
-    meetingsToSongbooks: {
+    songbooksGroup: {
       forward: {
-        on: 'meetings',
-        has: 'many',
-        label: 'songbook',
+        on: "songbooks",
+        has: "many",
+        label: "group",
       },
       reverse: {
-        on: 'songbooks',
-        has: 'many',
-        label: 'meetings',
+        on: "groups",
+        has: "many",
+        label: "songbooks",
       },
     },
-    meetingSongsToMeetings: {
+    songbookSongsSong: {
       forward: {
-        on: 'meetingSongs',
-        has: 'many',
-        label: 'meeting',
+        on: "songbookSongs",
+        has: "many",
+        label: "song",
       },
       reverse: {
-        on: 'meetings',
-        has: 'many',
-        label: 'songs',
+        on: "songs",
+        has: "many",
+        label: "songbookEntries",
       },
     },
-    meetingSongsToSongs: {
+    songbookSongsSongbook: {
       forward: {
-        on: 'meetingSongs',
-        has: 'many',
-        label: 'song',
+        on: "songbookSongs",
+        has: "many",
+        label: "songbook",
       },
       reverse: {
-        on: 'songs',
-        has: 'many',
-        label: 'meetingEntries',
+        on: "songbooks",
+        has: "many",
+        label: "songbookSongs",
       },
     },
-    meetingRSVPsToMeetings: {
+    songSharesGroup: {
       forward: {
-        on: 'meetingRSVPs',
-        has: 'many',
-        label: 'meeting',
+        on: "songShares",
+        has: "many",
+        label: "group",
       },
       reverse: {
-        on: 'meetings',
-        has: 'many',
-        label: 'rsvps',
+        on: "groups",
+        has: "many",
+        label: "songShares",
       },
     },
-    // Removed meetingRSVPsToUsers link - using $users instead
+    songSharesSong: {
+      forward: {
+        on: "songShares",
+        has: "many",
+        label: "song",
+      },
+      reverse: {
+        on: "songs",
+        has: "many",
+        label: "shares",
+      },
+    },
   },
   rooms: {},
 });

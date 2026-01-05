@@ -132,8 +132,45 @@ export default function SongEditor() {
     );
   }
 
+  const handleBack = () => {
+    if (isEditing && id) {
+      // If editing, go back to the song view
+      navigate(`/songs/${id}`);
+    } else {
+      // If creating, try to go back in history or go to songs list
+      if (window.history.length > 1) {
+        navigate(-1);
+      } else {
+        navigate('/songs');
+      }
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
+      <div className="flex items-center gap-4 mb-4">
+        <button
+          onClick={handleBack}
+          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+          aria-label="Go back"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-5 w-5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15 19l-7-7 7-7"
+            />
+          </svg>
+          <span>Back</span>
+        </button>
+      </div>
       <h1 className="text-3xl font-bold mb-6">
         {isEditing ? 'Edit Song' : 'Create New Song'}
       </h1>

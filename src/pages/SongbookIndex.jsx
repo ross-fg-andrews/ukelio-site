@@ -1,9 +1,9 @@
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useSongbook, useAccessibleSongs } from '../db/queries';
+import { useSongbook, useAccessibleSongs, useMyGroups } from '../db/queries';
 import { db } from '../db/schema';
 import { useEffect, useState, useRef } from 'react';
-import { copySong, removeSongFromSongbook } from '../db/mutations';
+import { copySong, removeSongFromSongbook, shareSongsWithGroups } from '../db/mutations';
 import { createPortal } from 'react-dom';
 
 export default function SongbookIndex() {
@@ -13,6 +13,7 @@ export default function SongbookIndex() {
   const userId = user?.id;
   const [openMenuId, setOpenMenuId] = useState(null);
   const [menuPosition, setMenuPosition] = useState(null);
+  const [showShareModal, setShowShareModal] = useState(false);
   const menuRefs = useRef({});
   const buttonRefs = useRef({});
   const menuPortalRef = useRef(null);
@@ -25,6 +26,7 @@ export default function SongbookIndex() {
   const accessibleSongsQuery = useAccessibleSongs(userId);
   const allSongs = accessibleSongsQuery.data?.songs || [];
   const accessibleSongIds = new Set(allSongs.map(s => s.id));
+  const { data: groupsData } = useMyGroups(userId);
 
   // Create accessible songs map
   const accessibleSongsMap = new Map(
@@ -254,13 +256,60 @@ export default function SongbookIndex() {
     );
   }
 
+  const canShare = userOwnsSongbook && songbook.type === 'private';
+  const userGroups = groupsData?.groupMembers?.map(gm => gm.group).filter(Boolean) || [];
+
+  const handleBack = () => {
+    // Try to go back in browser history, fallback to songbooks list
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/songbooks');
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">{songbook.title}</h1>
-        {songbook.description && (
-          <p className="text-gray-600">{songbook.description}</p>
-        )}
+        <div className="flex items-center gap-4 mb-4">
+          <button
+            onClick={handleBack}
+            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+            aria-label="Go back"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
+            </svg>
+            <span>Back</span>
+          </button>
+        </div>
+        <div className="flex items-start justify-between mb-2">
+          <div className="flex-1">
+            <h1 className="text-3xl font-bold mb-2">{songbook.title}</h1>
+            {songbook.description && (
+              <p className="text-gray-600">{songbook.description}</p>
+            )}
+          </div>
+          {canShare && (
+            <button
+              onClick={() => setShowShareModal(true)}
+              className="btn btn-primary"
+            >
+              Share with Group
+            </button>
+          )}
+        </div>
       </div>
 
       {songbookSongs.length === 0 ? (
@@ -312,17 +361,18 @@ export default function SongbookIndex() {
                   }
                   
                   return (
-                    <tr key={songbookSong.id} className="hover:bg-gray-50 transition-colors">
+                    <tr 
+                      key={songbookSong.id} 
+                      onClick={() => navigate(`/songs/${song.id}?songbook=${id}`)}
+                      className="hover:bg-gray-50 transition-colors cursor-pointer"
+                    >
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         #{index + 1}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <Link
-                          to={`/songs/${song.id}`}
-                          className="text-sm font-medium text-gray-900 hover:text-primary-600"
-                        >
+                        <span className="text-sm font-medium text-gray-900">
                           {song.title}
-                        </Link>
+                        </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                         {song.artist || <span className="text-gray-400">—</span>}
@@ -330,6 +380,7 @@ export default function SongbookIndex() {
                       <td 
                         className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium relative"
                         style={{ overflow: 'visible' }}
+                        onClick={(e) => e.stopPropagation()}
                       >
                         <div className="relative inline-block" ref={el => {
                           menuRefs.current[songbookSong.id] = el;
@@ -338,6 +389,7 @@ export default function SongbookIndex() {
                           <button
                             type="button"
                             onClick={(e) => {
+                              e.stopPropagation();
                               if (isMenuOpen) {
                                 setOpenMenuId(null);
                                 setMenuPosition(null);
@@ -461,6 +513,149 @@ export default function SongbookIndex() {
           document.body
         );
       })()}
+
+      {/* Share Songbook with Groups Modal */}
+      {showShareModal && songbook && (
+        <ShareSongbookWithGroupsModal
+          songbookId={songbook.id}
+          songbookTitle={songbook.title}
+          songbookSongs={songbookSongs}
+          userGroups={userGroups}
+          userId={userId}
+          onClose={() => setShowShareModal(false)}
+          onSuccess={() => setShowShareModal(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Share Songbook with Groups Modal Component
+function ShareSongbookWithGroupsModal({ songbookId, songbookTitle, songbookSongs, userGroups, userId, onClose, onSuccess }) {
+  const [selectedGroups, setSelectedGroups] = useState(new Set());
+  const [sharing, setSharing] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleToggleGroup = (groupId) => {
+    const newSelected = new Set(selectedGroups);
+    if (newSelected.has(groupId)) {
+      newSelected.delete(groupId);
+    } else {
+      newSelected.add(groupId);
+    }
+    setSelectedGroups(newSelected);
+  };
+
+  const handleShare = async () => {
+    if (selectedGroups.size === 0) {
+      setError('Please select at least one group.');
+      return;
+    }
+
+    if (!userId) {
+      setError('You must be logged in to share songbooks.');
+      return;
+    }
+
+    setSharing(true);
+    setError(null);
+
+    try {
+      // Get all song IDs from the songbook
+      const songIds = songbookSongs
+        .map(ss => ss.song?.id)
+        .filter(Boolean);
+
+      if (songIds.length === 0) {
+        setError('This songbook has no songs to share.');
+        return;
+      }
+
+      // Share all songs with selected groups
+      await shareSongsWithGroups(
+        songIds,
+        Array.from(selectedGroups),
+        userId
+      );
+
+      onSuccess();
+    } catch (err) {
+      console.error('Error sharing songbook:', err);
+      setError(err.message || 'Failed to share songbook. Please try again.');
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const selectedGroupNames = userGroups
+    .filter(g => selectedGroups.has(g.id))
+    .map(g => g.name);
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <h2 className="text-xl font-bold mb-4">Share "{songbookTitle}" with Groups</h2>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+            {error}
+          </div>
+        )}
+
+        {selectedGroups.size > 0 && (
+          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-yellow-800 text-sm">
+            <strong>Note:</strong> This will share all {songbookSongs.length} song{songbookSongs.length !== 1 ? 's' : ''} in this songbook with {selectedGroupNames.length === 1 ? selectedGroupNames[0] : 'the selected groups'}.
+          </div>
+        )}
+
+        {userGroups.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <p>You're not a member of any groups yet.</p>
+            <p className="text-sm mt-2">Join or create a group to share songbooks.</p>
+          </div>
+        ) : (
+          <div className="space-y-2 max-h-64 overflow-y-auto mb-4">
+            {userGroups.map((group) => (
+              <label
+                key={group.id}
+                className="flex items-center gap-2 p-2 border rounded hover:bg-gray-50 cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedGroups.has(group.id)}
+                  onChange={() => handleToggleGroup(group.id)}
+                  className="rounded"
+                />
+                <div className="flex-1">
+                  <div className="font-medium">{group.name}</div>
+                  {group.description && (
+                    <div className="text-sm text-gray-600">{group.description}</div>
+                  )}
+                </div>
+              </label>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={onClose}
+            disabled={sharing}
+            className="btn btn-secondary"
+          >
+            Cancel
+          </button>
+          {userGroups.length > 0 && (
+            <button
+              onClick={handleShare}
+              disabled={sharing || selectedGroups.size === 0}
+              className="btn btn-primary"
+            >
+              {sharing ? 'Sharing...' : `Share with ${selectedGroups.size} Group${selectedGroups.size !== 1 ? 's' : ''}`}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

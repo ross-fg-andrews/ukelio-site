@@ -1,9 +1,10 @@
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { useSong, useSongInSongbooks } from '../db/queries';
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { useSong, useSongInSongbooks, useAccessibleSongs, useMyGroups } from '../db/queries';
+import { db } from '../db/schema';
 import { renderInlineChords, renderAboveChords, parseLyricsWithChords, lyricsWithChordsToText } from '../utils/lyrics-helpers';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { deleteSong, createSong, updateSong } from '../db/mutations';
+import { deleteSong, createSong, updateSong, shareSongsWithGroups } from '../db/mutations';
 import { AppError, ERROR_CODES } from '../utils/error-handling';
 import ChordAutocomplete from '../components/ChordAutocomplete';
 import StyledChordEditor from '../components/StyledChordEditor';
@@ -15,12 +16,18 @@ export default function SongSheet() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const [chordMode, setChordMode] = useState('inline'); // 'inline' or 'above'
   const [menuOpen, setMenuOpen] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [songSelectorOpen, setSongSelectorOpen] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [shareError, setShareError] = useState(null);
   const menuRef = useRef(null);
+  const songSelectorRef = useRef(null);
   
   // Instrument and tuning settings (can be made configurable later)
   const instrument = 'ukulele';
@@ -37,6 +44,53 @@ export default function SongSheet() {
   const { data, error } = useSong(id);
   const song = data?.songs?.[0];
   const { data: songbookData } = useSongInSongbooks(id);
+  const { data: groupsData } = useMyGroups(user?.id);
+  
+  // Also query groups directly as a fallback if group relation isn't populated
+  const groupIds = groupsData?.groupMembers?.map(gm => gm.groupId).filter(Boolean) || [];
+  const { data: directGroupsData } = db.useQuery({
+    groups: {
+      $: {
+        where: groupIds.length > 0 ? { id: { $in: groupIds } } : { id: '' },
+      },
+    },
+  });
+  
+  // Get songbook ID and group ID from query parameters
+  const songbookId = searchParams.get('songbook');
+  const groupId = searchParams.get('group');
+  
+  // Get accessible songs to enrich songbookSongs
+  const accessibleSongsQuery = useAccessibleSongs(user?.id || null);
+  const allSongs = accessibleSongsQuery.data?.songs || [];
+  const accessibleSongsMap = new Map(
+    allSongs.map(song => [song.id, song])
+  );
+  
+  // Query songbookSongs directly when in songbook context (similar to SongbookIndex)
+  const { data: songbookSongsData } = db.useQuery({
+    songbookSongs: {
+      $: {
+        where: songbookId ? { songbookId } : { songbookId: '' },
+        order: { order: 'asc' },
+      },
+    },
+  });
+  const rawSongbookSongs = songbookSongsData?.songbookSongs || [];
+  
+  // Enrich songbookSongs with song data from accessible songs
+  // Also include the current song even if not in accessibleSongs (user is viewing it)
+  const contextSongbookSongs = useMemo(() => {
+    return rawSongbookSongs
+      .map(ss => {
+        const songData = accessibleSongsMap.get(ss.songId) || (ss.songId === id ? song : null);
+        if (songData) {
+          return { ...ss, song: songData };
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }, [rawSongbookSongs, accessibleSongsMap, id, song]);
 
   // Compute mode after hooks (this is just derived state, not affecting hook order)
   const isCreateMode = location.pathname === '/songs/new';
@@ -82,13 +136,16 @@ export default function SongSheet() {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         setMenuOpen(false);
       }
+      if (songSelectorRef.current && !songSelectorRef.current.contains(event.target)) {
+        setSongSelectorOpen(false);
+      }
     }
 
-    if (menuOpen) {
+    if (menuOpen || songSelectorOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [menuOpen]);
+  }, [menuOpen, songSelectorOpen]);
 
   // Parse chords from JSON string (must be before early returns for hooks)
   let chords = [];
@@ -133,6 +190,57 @@ export default function SongSheet() {
       .filter(Boolean);
   }, [uniqueChordNames, instrument, tuning]);
 
+  // Find current song position in songbook and calculate navigation
+  const songbookNavigation = useMemo(() => {
+    if (!songbookId || !contextSongbookSongs.length || !id) {
+      return null;
+    }
+
+    // Find current song's position in the songbook
+    const currentIndex = contextSongbookSongs.findIndex(ss => ss.song?.id === id);
+    
+    if (currentIndex === -1) {
+      // Current song not found in this songbook
+      return null;
+    }
+
+    const previousSongbookSong = currentIndex > 0 ? contextSongbookSongs[currentIndex - 1] : null;
+    const nextSongbookSong = currentIndex < contextSongbookSongs.length - 1 ? contextSongbookSongs[currentIndex + 1] : null;
+
+    return {
+      currentIndex,
+      totalSongs: contextSongbookSongs.length,
+      previousSongId: previousSongbookSong?.song?.id || null,
+      nextSongId: nextSongbookSong?.song?.id || null,
+      songs: contextSongbookSongs.map((ss, idx) => ({
+        id: ss.song?.id,
+        title: ss.song?.title,
+        artist: ss.song?.artist,
+        position: idx + 1,
+      })),
+    };
+  }, [songbookId, contextSongbookSongs, id]);
+
+  // Navigation handlers
+  const handlePreviousSong = () => {
+    if (songbookNavigation?.previousSongId && songbookId) {
+      navigate(`/songs/${songbookNavigation.previousSongId}?songbook=${songbookId}`);
+    }
+  };
+
+  const handleNextSong = () => {
+    if (songbookNavigation?.nextSongId && songbookId) {
+      navigate(`/songs/${songbookNavigation.nextSongId}?songbook=${songbookId}`);
+    }
+  };
+
+  const handleJumpToSong = (songId) => {
+    if (songId && songbookId) {
+      navigate(`/songs/${songId}?songbook=${songbookId}`);
+      setSongSelectorOpen(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!user || !user.id) {
       alert('You must be logged in to save a song.');
@@ -162,7 +270,12 @@ export default function SongSheet() {
           artist,
           chords: chordsJson,
         });
-        navigate(`/songs/${id}`);
+        // Preserve query parameters when navigating back to view mode
+        const params = new URLSearchParams();
+        if (songbookId) params.set('songbook', songbookId);
+        if (groupId) params.set('group', groupId);
+        const queryString = params.toString();
+        navigate(`/songs/${id}${queryString ? `?${queryString}` : ''}`);
       } else {
         const newSong = await createSong({
           title,
@@ -192,7 +305,12 @@ export default function SongSheet() {
 
   const handleCancel = () => {
     if (isEditMode) {
-      navigate(`/songs/${id}`);
+      // Preserve query parameters when canceling edit
+      const params = new URLSearchParams();
+      if (songbookId) params.set('songbook', songbookId);
+      if (groupId) params.set('group', groupId);
+      const queryString = params.toString();
+      navigate(`/songs/${id}${queryString ? `?${queryString}` : ''}`);
     } else {
       navigate('/home');
     }
@@ -239,8 +357,52 @@ export default function SongSheet() {
 
   // Edit/Create Mode
   if (isEditMode || isCreateMode) {
+    const handleBackEdit = () => {
+      if (isEditMode && id) {
+        // If editing, go back to the song view (preserve context)
+        const params = new URLSearchParams();
+        if (songbookId) params.set('songbook', songbookId);
+        if (groupId) params.set('group', groupId);
+        const queryString = params.toString();
+        navigate(`/songs/${id}${queryString ? `?${queryString}` : ''}`);
+      } else {
+        // If creating, check for group context first
+        if (groupId) {
+          navigate(`/groups/${groupId}?tab=songs`);
+        } else if (window.history.length > 1) {
+          navigate(-1);
+        } else {
+          navigate('/songs');
+        }
+      }
+    };
+
     return (
       <div className="max-w-4xl mx-auto">
+        {/* Back button */}
+        <div className="flex items-center gap-4 mb-4">
+          <button
+            onClick={handleBackEdit}
+            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+            aria-label="Go back"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
+            </svg>
+            <span>Back</span>
+          </button>
+        </div>
         {/* Save and Cancel buttons above the title */}
         <div className="flex gap-4 mb-6">
           <button
@@ -308,6 +470,25 @@ export default function SongSheet() {
     ? renderInlineChords(song.lyrics, chords)
     : renderAboveChords(song.lyrics, chords);
 
+  const handleBack = () => {
+    // If we're in a group context, go back to the group songs tab
+    if (groupId) {
+      navigate(`/groups/${groupId}?tab=songs`);
+      return;
+    }
+    // If we're in a songbook context, go back to the songbook
+    if (songbookId) {
+      navigate(`/songbooks/${songbookId}`);
+      return;
+    }
+    // Try to go back in browser history, fallback to songs list
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/songs');
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
       {/* Delete Confirmation Modal */}
@@ -339,19 +520,155 @@ export default function SongSheet() {
       )}
 
       <div className="mb-6">
+        <div className="flex items-center gap-4 mb-4">
+          <button
+            onClick={handleBack}
+            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+            aria-label="Go back"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
+            </svg>
+            <span>Back</span>
+          </button>
+        </div>
         <div className="flex items-start justify-between mb-2">
-          <div>
-            <h1 className="text-4xl font-bold mb-2">{song.title}</h1>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-2">
+              {isViewMode && songbookNavigation ? (
+                <div className="relative" ref={songSelectorRef}>
+                  <button
+                    onClick={() => setSongSelectorOpen(!songSelectorOpen)}
+                    className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer"
+                    aria-label="Select song from songbook"
+                  >
+                    <h1 className="text-4xl font-bold">{song.title}</h1>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className={`h-5 w-5 text-gray-600 transition-transform ${songSelectorOpen ? 'rotate-180' : ''}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 9l-7 7-7-7"
+                      />
+                    </svg>
+                  </button>
+                  {songSelectorOpen && (
+                    <div className="absolute left-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-10 max-h-96 overflow-y-auto">
+                      <div className="py-1">
+                        {songbookNavigation.songs.map((songItem) => (
+                          <button
+                            key={songItem.id}
+                            onClick={() => handleJumpToSong(songItem.id)}
+                            className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors ${
+                              songItem.id === id ? 'bg-primary-50 text-primary-700 font-medium' : ''
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-500 font-mono text-xs w-6">
+                                {songItem.position}.
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium truncate">{songItem.title}</div>
+                                {songItem.artist && (
+                                  <div className="text-xs text-gray-500 truncate">{songItem.artist}</div>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <h1 className="text-4xl font-bold">{song.title}</h1>
+              )}
+            </div>
             {song.artist && (
               <p className="text-xl text-gray-600">{song.artist}</p>
             )}
           </div>
-          <div className="relative" ref={menuRef}>
-            <button
-              onClick={() => setMenuOpen(!menuOpen)}
-              className="btn p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              aria-label="Song actions"
-            >
+          <div className="flex items-center gap-2">
+            {/* Previous/Next Navigation Buttons */}
+            {isViewMode && songbookNavigation && (
+              <div className="flex items-center gap-1">
+                <div className="relative group">
+                  <button
+                    onClick={handlePreviousSong}
+                    disabled={!songbookNavigation.previousSongId}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    aria-label="Previous song"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-5 w-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M15 19l-7-7 7-7"
+                      />
+                    </svg>
+                  </button>
+                  <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                    Previous song
+                  </span>
+                </div>
+                <div className="relative group">
+                  <button
+                    onClick={handleNextSong}
+                    disabled={!songbookNavigation.nextSongId}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    aria-label="Next song"
+                  >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 5l7 7-7 7"
+                    />
+                  </svg>
+                  </button>
+                  <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                    Next song
+                  </span>
+                </div>
+              </div>
+            )}
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="btn p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Song actions"
+              >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-6 w-6"
@@ -393,12 +710,31 @@ export default function SongSheet() {
                   >
                     Chords Above
                   </button>
+                  {isCreator && (
+                    <>
+                      <div className="border-t border-gray-200 my-1"></div>
+                      <button
+                        onClick={() => {
+                          setShowShareModal(true);
+                          setMenuOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
+                      >
+                        Share with Group
+                      </button>
+                    </>
+                  )}
                   {canEdit && (
                     <>
                       <div className="border-t border-gray-200 my-1"></div>
                       <button
                         onClick={() => {
-                          navigate(`/songs/${id}/edit`);
+                          // Preserve query parameters when navigating to edit mode
+                          const params = new URLSearchParams();
+                          if (songbookId) params.set('songbook', songbookId);
+                          if (groupId) params.set('group', groupId);
+                          const queryString = params.toString();
+                          navigate(`/songs/${id}/edit${queryString ? `?${queryString}` : ''}`);
                           setMenuOpen(false);
                         }}
                         className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
@@ -425,6 +761,7 @@ export default function SongSheet() {
               </div>
             )}
           </div>
+          </div>
         </div>
       </div>
 
@@ -435,7 +772,7 @@ export default function SongSheet() {
             <div className="space-y-2">
               {renderedLyrics.map((line, i) => (
                 <p key={i} className="text-lg leading-relaxed">
-                  {line.split(/\[([^\]]+)\]/).map((part, j) => {
+                  {line === '' ? '\u00A0' : line.split(/\[([^\]]+)\]/).map((part, j) => {
                     if (j % 2 === 1) {
                       return <span key={j} className="inline-block px-2 py-1 bg-primary-100 text-primary-700 rounded text-sm font-medium">{part}</span>;
                     }
@@ -466,7 +803,7 @@ export default function SongSheet() {
                       })}
                     </p>
                   )}
-                  <p className="text-lg whitespace-pre">{lyricLine}</p>
+                  <p className="text-lg whitespace-pre">{lyricLine === '' ? '\u00A0' : lyricLine}</p>
                 </div>
               ))}
             </div>
@@ -512,6 +849,164 @@ export default function SongSheet() {
             </div>
           </div>
         ) : null}
+      </div>
+
+      {/* Share with Groups Modal */}
+      {showShareModal && song && (
+        <ShareWithGroupsModal
+          songId={song.id}
+          songTitle={song.title}
+          userGroups={
+            (() => {
+              // Try to get groups from the relation first
+              let groups = groupsData?.groupMembers
+                ?.map(gm => gm?.group)
+                .filter(Boolean)
+                .filter(group => group && group.id) || [];
+              
+              // Fallback: if relation isn't populated, use direct groups query
+              if (groups.length === 0 && directGroupsData?.groups) {
+                groups = directGroupsData.groups.filter(group => group && group.id);
+              }
+              
+              // Debug logging
+              console.log('SongSheet - groupsData:', groupsData);
+              console.log('SongSheet - groupMembers:', groupsData?.groupMembers);
+              console.log('SongSheet - directGroupsData:', directGroupsData);
+              console.log('SongSheet - final groups:', groups);
+              
+              return groups;
+            })()
+          }
+          onClose={() => {
+            setShowShareModal(false);
+            setShareError(null);
+          }}
+          onSuccess={() => {
+            setShowShareModal(false);
+            setShareError(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Share with Groups Modal Component
+function ShareWithGroupsModal({ songId, songTitle, userGroups, onClose, onSuccess }) {
+  const { user } = useAuth();
+  const [selectedGroups, setSelectedGroups] = useState(new Set());
+  const [sharing, setSharing] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Ensure userGroups is always an array
+  const safeUserGroups = Array.isArray(userGroups) ? userGroups : [];
+  
+  // Debug: log groups data to help troubleshoot
+  if (safeUserGroups.length === 0 && userGroups !== undefined) {
+    console.log('ShareWithGroupsModal: No groups found. userGroups:', userGroups);
+  }
+
+  const handleToggleGroup = (groupId) => {
+    const newSelected = new Set(selectedGroups);
+    if (newSelected.has(groupId)) {
+      newSelected.delete(groupId);
+    } else {
+      newSelected.add(groupId);
+    }
+    setSelectedGroups(newSelected);
+  };
+
+  const handleShare = async () => {
+    if (selectedGroups.size === 0) {
+      setError('Please select at least one group.');
+      return;
+    }
+
+    if (!user?.id) {
+      setError('You must be logged in to share songs.');
+      return;
+    }
+
+    setSharing(true);
+    setError(null);
+
+    try {
+      await shareSongsWithGroups(
+        [songId],
+        Array.from(selectedGroups),
+        user.id
+      );
+      onSuccess();
+    } catch (err) {
+      console.error('Error sharing song:', err);
+      setError(err.message || 'Failed to share song. Please try again.');
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <h2 className="text-xl font-bold mb-4">Share "{songTitle}" with Groups</h2>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+            {error}
+          </div>
+        )}
+
+        {safeUserGroups.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <p>You're not a member of any groups yet.</p>
+            <p className="text-sm mt-2">Join or create a group to share songs.</p>
+          </div>
+        ) : (
+          <div className="space-y-2 max-h-64 overflow-y-auto mb-4">
+            {safeUserGroups.map((group) => {
+              if (!group || !group.id) return null;
+              return (
+                <label
+                  key={group.id}
+                  className="flex items-center gap-2 p-2 border rounded hover:bg-gray-50 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedGroups.has(group.id)}
+                    onChange={() => handleToggleGroup(group.id)}
+                    className="rounded"
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium">{group.name || 'Unnamed Group'}</div>
+                    {group.description && (
+                      <div className="text-sm text-gray-600">{group.description}</div>
+                    )}
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={onClose}
+            disabled={sharing}
+            className="btn btn-secondary"
+          >
+            Cancel
+          </button>
+          {safeUserGroups.length > 0 && (
+            <button
+              onClick={handleShare}
+              disabled={sharing || selectedGroups.size === 0}
+              className="btn btn-primary"
+            >
+              {sharing ? 'Sharing...' : `Share with ${selectedGroups.size} Group${selectedGroups.size !== 1 ? 's' : ''}`}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

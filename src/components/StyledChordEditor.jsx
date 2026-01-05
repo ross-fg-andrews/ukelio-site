@@ -317,6 +317,7 @@ export default function StyledChordEditor({
     const traverse = (node) => {
       for (let i = 0; i < node.childNodes.length; i++) {
         const child = node.childNodes[i];
+        
         if (child.nodeType === Node.TEXT_NODE) {
           text += child.textContent;
         } else if (child.nodeType === Node.ELEMENT_NODE) {
@@ -326,6 +327,18 @@ export default function StyledChordEditor({
           } else if (child.hasAttribute('data-chord')) {
             // This is a styled chord span
             text += `[${child.textContent}]`;
+          } else if (child.tagName === 'DIV' || child.tagName === 'P') {
+            // Block elements represent line breaks in contenteditable
+            // Add newline before this block element (if there's already content)
+            if (text.length > 0 && !text.endsWith('\n')) {
+              text += '\n';
+            }
+            // Recursively traverse element children
+            traverse(child);
+            // Add newline after this block element (if not the last child)
+            if (i < node.childNodes.length - 1) {
+              text += '\n';
+            }
           } else {
             // Recursively traverse element children
             traverse(child);

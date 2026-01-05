@@ -44,9 +44,13 @@ The app will be available at `http://localhost:3000`
 ### Initial Setup
 
 1. **Configure InstantDB Schema**: 
-   - Go to your InstantDB dashboard
-   - Import the schema from `src/db/schema.js`
-   - Set up permissions from `src/db/permissions.js` (if using InstantDB's permission system)
+   - The schema is defined in `src/instant.schema.ts`
+   - After making schema changes, sync them to InstantDB:
+     ```bash
+     npm run sync-schema
+     ```
+   - This will push your schema changes to your InstantDB app
+   - Set up permissions from `src/db/permissions.md` (configure in InstantDB dashboard)
 
 2. **Seed Chord Library**:
    - Once authenticated, you can run the chord seeding function
@@ -83,6 +87,17 @@ See the comprehensive plan document for detailed feature roadmap and implementat
 
 - `VITE_INSTANTDB_APP_ID`: Your InstantDB application ID
 
+## Available Commands
+
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm run preview` - Preview production build
+- `npm run lint` - Run ESLint
+- `npm run sync-schema` - Sync schema changes to InstantDB (run after modifying `src/instant.schema.ts`)
+- `npm run sync-perms` - Sync permissions changes to InstantDB (run after modifying `src/instant.perms.ts`)
+- `npm run sync-all` - Sync both schema and permissions to InstantDB
+- `npm run watch-sync` - Automatically watch and sync schema/permissions on file changes
+
 ## Building for Production
 
 ```bash
@@ -90,6 +105,30 @@ npm run build
 ```
 
 The built files will be in the `dist/` directory, ready to deploy to Vercel or any static hosting service.
+
+## Schema Changes
+
+When you modify the schema in `src/instant.schema.ts` or permissions in `src/instant.perms.ts`, you need to sync them to InstantDB.
+
+### Manual Sync
+
+```bash
+npm run sync-schema  # Sync schema changes
+npm run sync-perms   # Sync permissions changes
+npm run sync-all     # Sync both schema and permissions
+```
+
+### Automatic Sync (Recommended for Development)
+
+For automatic syncing during development, you can run the watch script:
+
+```bash
+npm run watch-sync
+```
+
+This will watch for changes to `instant.schema.ts` and `instant.perms.ts` and automatically sync them to InstantDB whenever you save the files. You can run this in a separate terminal alongside your dev server.
+
+Make sure your `.env` file contains your `VITE_INSTANTDB_APP_ID`.
 
 ## License
 
