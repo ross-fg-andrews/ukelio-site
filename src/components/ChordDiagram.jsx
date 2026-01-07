@@ -75,31 +75,40 @@ export default function ChordDiagram({
     showNut = false;
     startFret = minFret;
     const chordSpan = maxFret - minFret + 1;
-    fretCount = Math.max(4, chordSpan); // Show at least 4 frets, or actual span if more
+    // Always show at least 4 fret spaces (which requires 5 fret lines)
+    // For example: frets 5-8 need lines at 5,6,7,8,9 to show spaces 5-6, 6-7, 7-8, 8-9
+    fretCount = Math.max(5, chordSpan + 1);
   }
 
   // Calculate dimensions
   const stringSpacing = 12;
-  const fretSpacing = 15;
+  const fretSpacing = 12; // Square fret spaces (same as string spacing)
   const containerWidth = 60;
   const sideContainerWidth = 14; // Fixed width for left (fret number) and right (empty) containers
-  const leftPadding = 2; // Minimal left padding inside SVG to bring diagram closer to fret number
-  const rightPadding = 2; // Minimal right padding inside SVG
+  const dotRadius = 4.5; // Finger position dot radius
+  const leftPadding = 5; // Padding to accommodate dot radius and prevent cropping
+  const rightPadding = 5; // Padding to accommodate dot radius and prevent cropping
   const nutExtension = 3; // How much the nut extends beyond strings
   const svgStartX = leftPadding; // Internal SVG X start position for strings
   const stringsWidth = (stringCount - 1) * stringSpacing; // Width spanned by strings
-  // SVG width: left padding + strings width + right padding = 2 + 36 + 2 = 40px for 4 strings
+  // SVG width: left padding + strings width + right padding = 5 + 36 + 5 = 46px for 4 strings
   const width = leftPadding + stringsWidth + rightPadding;
-  // Label container width: 14px (left) + 40px (SVG) + 14px (right) = 68px total
+  // Label container width: 14px (left) + 46px (SVG) + 14px (right) = 74px total
   const labelContainerWidth = sideContainerWidth + width + sideContainerWidth;
-  const startY = 10; // Start Y position (first fret line position)
+  const startY = 6; // Start Y position (first fret line position)
   const height = fretCount * fretSpacing + 20; // Height based on fret count
+  
+  // Calculate Y position for fret number (centered at lowest fretted note)
+  const lowestFrettedNote = numericFrets.length > 0 ? Math.min(...numericFrets) : null;
+  const fretNumberY = lowestFrettedNote !== null && !showNut
+    ? startY + (lowestFrettedNote - startFret) * fretSpacing + fretSpacing / 2
+    : null;
   
   return (
     <div className="flex flex-col items-center" style={{ width: labelContainerWidth }}>
       {/* Chord label above diagram - centered over SVG width (68px for 4 strings) */}
       {chordName && (
-        <div className="flex justify-center mb-1 w-full">
+        <div className="flex justify-center mb-0.5 w-full">
           <div className="inline-block px-2 py-1 bg-primary-100 text-primary-700 rounded text-sm font-medium">
             {chordName}
           </div>
@@ -109,11 +118,14 @@ export default function ChordDiagram({
       <div className="flex items-center w-full" style={{ height: height, overflow: 'visible' }}>
         {/* Left container: fixed width, contains fret number or empty */}
         <div 
-          className="flex items-center justify-center flex-shrink-0" 
+          className="flex-shrink-0 relative" 
           style={{ width: sideContainerWidth, height: height }}
         >
-          {!showNut && (
-            <span className="text-xs font-medium text-gray-700 leading-none">
+          {!showNut && fretNumberY !== null && (
+            <span 
+              className="absolute text-xs font-medium text-gray-700 leading-none"
+              style={{ top: fretNumberY, left: '50%', transform: 'translate(-50%, -50%)' }}
+            >
               {minFret}
             </span>
           )}
@@ -131,17 +143,20 @@ export default function ChordDiagram({
             className="flex-shrink-0"
           >
           {/* Strings (vertical lines) */}
-          {Array.from({ length: stringCount }, (_, i) => i).map((stringIndex) => (
-            <line
-              key={`string-${stringIndex}`}
-              x1={svgStartX + stringIndex * stringSpacing}
-              y1={startY}
-              x2={svgStartX + stringIndex * stringSpacing}
-              y2={height - 10}
-              stroke="#666"
-              strokeWidth="1"
-            />
-          ))}
+          {Array.from({ length: stringCount }, (_, i) => i).map((stringIndex) => {
+            const bottomFretY = startY + (fretCount - 1) * fretSpacing;
+            return (
+              <line
+                key={`string-${stringIndex}`}
+                x1={svgStartX + stringIndex * stringSpacing}
+                y1={startY}
+                x2={svgStartX + stringIndex * stringSpacing}
+                y2={bottomFretY + 3}
+                stroke="#666"
+                strokeWidth="1"
+              />
+            );
+          })}
 
           {/* Frets (horizontal lines) - dynamically render based on fretCount */}
           {Array.from({ length: fretCount }, (_, i) => {
@@ -210,7 +225,7 @@ export default function ChordDiagram({
                 key={`fret-${stringIndex}`}
                 cx={x}
                 cy={cy}
-                r="3"
+                r={dotRadius}
                 fill="#0ea5e9" // primary-500
               />
             );
