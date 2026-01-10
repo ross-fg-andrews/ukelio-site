@@ -361,3 +361,4 @@ If you run into any issues during setup:
 3. Verify environment variables are set correctly
 4. Refer to this troubleshooting section
 5. Check InstantDB dashboard for database status
+
