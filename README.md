@@ -85,7 +85,12 @@ See the comprehensive plan document for detailed feature roadmap and implementat
 
 ## Environment Variables
 
+For local development, see `.env.example` for required variables:
+
 - `VITE_INSTANTDB_APP_ID`: Your InstantDB application ID
+- `VITE_ENVIRONMENT`: Set to `development` for local development (Vercel sets this automatically for deployments)
+
+**Important:** Never commit `.env` file to Git. Copy `.env.example` to `.env` and add your actual values.
 
 ## Available Commands
 
@@ -108,6 +113,50 @@ npm run build
 ```
 
 The built files will be in the `dist/` directory, ready to deploy to Vercel or any static hosting service.
+
+## Deployment
+
+This app is configured for deployment to Vercel with separate staging and production environments.
+
+### Quick Start
+
+For detailed deployment instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
+
+**Summary:**
+- **Production**: Deployed from `main` branch → Production domain
+- **Staging**: Deployed from `develop` branch → Staging URL (vercel.app subdomain)
+- **Separate databases**: Staging and production use different InstantDB apps for complete isolation
+
+### Environment Variables
+
+For deployment, configure these environment variables in Vercel:
+
+- `VITE_INSTANTDB_APP_ID`: Your InstantDB App ID (different for staging and production)
+- `VITE_ENVIRONMENT`: Set to `production` for production, `staging` for staging
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed setup instructions.
+
+### Deployment Workflow
+
+1. **Test in staging:**
+   ```bash
+   git checkout develop
+   # Make changes
+   git add .
+   git commit -m "Add new feature"
+   git push origin develop
+   # Automatically deploys to staging
+   ```
+
+2. **Deploy to production (when ready):**
+   ```bash
+   git checkout main
+   git merge develop
+   git push origin main
+   # Automatically deploys to production
+   ```
+
+For more details, troubleshooting, and database update procedures, see [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ## Schema Changes
 
