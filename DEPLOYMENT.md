@@ -70,43 +70,59 @@ The Git repository has been set up with:
    - Find your `strumkey-site` repository and click "Import"
    - Vercel will automatically detect it's a Vite project
 
-2. **Configure project settings:**
+2. **Configure project settings (Build and Output Settings section):**
    - **Framework Preset:** Vite (should auto-detect) ✓
    - **Root Directory:** `./` (leave as default)
    - **Build Command:** `npm run build` (should auto-detect) ✓
    - **Output Directory:** `dist` (should auto-detect) ✓
    - **Install Command:** `npm install` (should auto-detect) ✓
+   - ⚡ **Note:** These should all be auto-detected correctly - just verify they look right
 
-3. **Set up production deployment:**
-   - In "Production Branch" setting, select `main`
-   - This means pushing to `main` will deploy to production
+3. **Configure environment variables for production (BEFORE deploying):**
+   - Scroll down to "Environment Variables" section (or click on it)
+   - Add the first variable:
+     - Click "Add New" or the "+" button
+     - **Key:** `VITE_INSTANTDB_APP_ID`
+     - **Value:** Your **Production** InstantDB App ID: `f5937544-d918-4dc7-bb05-5f4a8cae65b3` (from DEPLOYMENT_NOTES.md)
+     - **Environment:** Check the **Production** checkbox (and ONLY Production for now)
+     - Click "Save" or "Add"
+   - Add the second variable:
+     - Click "Add New" or the "+" button again
+     - **Key:** `VITE_ENVIRONMENT`
+     - **Value:** `production`
+     - **Environment:** Check the **Production** checkbox (and ONLY Production for now)
+     - Click "Save" or "Add"
+   - ⚠️ **Important:** When adding these variables, make sure you check ONLY the "Production" checkbox/environment option
 
-4. **Configure environment variables for production:**
-   - In project settings, go to "Environment Variables"
-   - Add the following variables for **Production** environment:
-     - `VITE_INSTANTDB_APP_ID` = your **Production** InstantDB App ID
-     - `VITE_ENVIRONMENT` = `production`
-   - ⚠️ **Important:** Make sure "Production" environment is selected when adding these
-
-5. **Deploy production:**
-   - Click "Deploy" button
+4. **Deploy production:**
+   - Scroll down and click "Deploy" button
    - Wait for deployment to complete (usually 1-2 minutes)
-   - You'll get a URL like `strumkey-site.vercel.app` - this is your production site
+   - You'll see a progress indicator and then a success message
+   - You'll get a URL like `strumkey-site-xxxxx.vercel.app` - this is your production site
+   - ⚡ **Note:** By default, Vercel automatically uses the `main` branch as the production branch, so this is already configured correctly - you don't need to set it during import
+
+5. **Verify production deployment (AFTER deployment completes):**
+   - After deployment completes, go to your project dashboard
+   - ⚡ **Note:** Vercel automatically uses your repository's default branch (`main`) as the production branch - you don't need to configure this manually
+   - Your production site should be live at a `*.vercel.app` URL
+   - Any push to the `main` branch will automatically deploy to production
 
 6. **Test production deployment:**
-   - Visit your production URL
+   - Visit your production URL (shown in Vercel dashboard after deployment)
    - Sign in and verify it connects to your production database
-   - Test basic functionality
+   - Test basic functionality to make sure everything works
 
 ### Step 4: Staging Environment Setup
 
 **What you need to do in Vercel dashboard:**
 
 1. **Enable automatic preview deployments:**
-   - In your Vercel project dashboard, go to Settings → Git
-   - Under "Production Branch", make sure `main` is selected (should already be set)
-   - Under "Preview Deployments", enable "Automatic Preview Deployments"
-   - This means every branch (including `develop`) will automatically get its own preview URL when pushed
+   - In your Vercel project dashboard, go to **Settings** → **Git**
+   - ⚡ **Note:** Vercel automatically uses `main` as your production branch - you don't need to set this
+   - Look for "Preview Deployments" or "Automatic Preview Deployments" option
+   - If you see it, enable it - this means every branch (including `develop`) will automatically get its own preview URL when pushed
+   - ⚡ **Note:** In some Vercel interfaces, preview deployments are enabled by default - if you don't see this option, preview deployments may already be enabled
+   - You can test this by checking if any push to a non-main branch creates a preview deployment
 
 2. **Configure environment variables for staging:**
    - In your Vercel project, go to Settings → Environment Variables

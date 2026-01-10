@@ -33,3 +33,6 @@ node_modules/.vite
 .env.local
 .env.production
 
+
+# Deployment notes (contains App IDs)
+DEPLOYMENT_NOTES.md
